@@ -323,7 +323,8 @@ class ModelCheckpoint(Checkpoint):
             self._last_time_checked = now
 
         monitor_candidates = self._monitor_candidates(trainer)
-        self._save_topk_checkpoint(trainer, monitor_candidates)
+        # be permissive mid-epoch: users may log on_epoch-only metrics that appear later in the epoch
+        self._save_topk_checkpoint(trainer, monitor_candidates, strict=False)
         self._save_last_checkpoint(trainer, monitor_candidates)
 
     @override
@@ -332,7 +333,8 @@ class ModelCheckpoint(Checkpoint):
         if not self._should_skip_saving_checkpoint(trainer) and self._should_save_on_train_epoch_end(trainer):
             monitor_candidates = self._monitor_candidates(trainer)
             if self._every_n_epochs >= 1 and (trainer.current_epoch + 1) % self._every_n_epochs == 0:
-                self._save_topk_checkpoint(trainer, monitor_candidates)
+                # be strict at epoch boundaries
+                self._save_topk_checkpoint(trainer, monitor_candidates, strict=True)
             self._save_last_checkpoint(trainer, monitor_candidates)
 
     @override
@@ -341,7 +343,8 @@ class ModelCheckpoint(Checkpoint):
         if not self._should_skip_saving_checkpoint(trainer) and not self._should_save_on_train_epoch_end(trainer):
             monitor_candidates = self._monitor_candidates(trainer)
             if self._every_n_epochs >= 1 and (trainer.current_epoch + 1) % self._every_n_epochs == 0:
-                self._save_topk_checkpoint(trainer, monitor_candidates)
+                # be strict at end of validation
+                self._save_topk_checkpoint(trainer, monitor_candidates, strict=True)
             self._save_last_checkpoint(trainer, monitor_candidates)
 
     @override
@@ -377,7 +380,9 @@ class ModelCheckpoint(Checkpoint):
 
         self.best_model_path = state_dict["best_model_path"]
 
-    def _save_topk_checkpoint(self, trainer: "pl.Trainer", monitor_candidates: dict[str, Tensor]) -> None:
+    def _save_topk_checkpoint(
+        self, trainer: "pl.Trainer", monitor_candidates: dict[str, Tensor], *, strict: Optional[bool] = None
+    ) -> None:
         if self.save_top_k == 0:
             return
 
@@ -389,9 +394,13 @@ class ModelCheckpoint(Checkpoint):
                     f" metrics: {list(monitor_candidates)}."
                     f" HINT: Did you call `log({self.monitor!r}, value)` in the `LightningModule`?"
                 )
-                if trainer.fit_loop.epoch_loop.val_loop._has_run:
+                # determine strictness: default to previous behavior when not provided
+                if strict is None:
+                    strict = trainer.fit_loop.epoch_loop.val_loop._has_run
+                if strict:
                     raise MisconfigurationException(m)
                 warning_cache.warn(m)
+                return
             self._save_monitor_checkpoint(trainer, monitor_candidates)
         else:
             self._save_none_monitor_checkpoint(trainer, monitor_candidates)

@@ -1666,3 +1666,65 @@ def test_load_with_inf_data_loader(tmp_path):
     trainer_kwargs["max_epochs"] = 4
     trainer = Trainer(**trainer_kwargs, callbacks=ModelCheckpoint(**mc_kwargs))
     trainer.fit(model, ckpt_path=checkpoint_path)
+
+
+def test_checkpoint_missing_monitor_mid_epoch_does_not_raise(tmp_path):
+    """If a monitored metric is only logged at validation epoch end, step/time-based checkpointing during training
+    should not raise before the metric becomes available at the end of validation."""
+
+    class EpochOnlyMetricModel(BoringModel):
+        def validation_step(self, batch, batch_idx):
+            # do not log the monitored metric here
+            return super().validation_step(batch, batch_idx)
+
+        def on_validation_epoch_end(self):
+            # log once per validation epoch
+            self.log("val_epoch_only", torch.tensor(1.0))
+
+    model = EpochOnlyMetricModel()
+
+    # Trigger checkpointing every training step; metric isn't available until validation epoch end
+    mc = ModelCheckpoint(
+        dirpath=tmp_path, monitor="val_epoch_only", every_n_train_steps=1, save_top_k=1, save_last=True
+    )
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        callbacks=[mc],
+        max_epochs=1,
+        limit_train_batches=3,
+        limit_val_batches=2,
+        num_sanity_val_steps=0,
+        enable_progress_bar=False,
+        logger=False,
+    )
+    # should not raise
+    trainer.fit(model)
+    # last checkpoint saved at validation end
+    assert (tmp_path / "last.ckpt").exists()
+
+
+def test_checkpoint_missing_monitor_raises_at_validation_end(tmp_path):
+    """If the monitored metric never appears by validation end, we should raise at that point (strict behavior)."""
+
+    class NoMetricModel(BoringModel):
+        def validation_step(self, batch, batch_idx):
+            # log a different metric
+            self.log("other_metric", torch.tensor(0.5))
+            return super().validation_step(batch, batch_idx)
+
+    model = NoMetricModel()
+
+    mc = ModelCheckpoint(dirpath=tmp_path, monitor="missing_metric", save_top_k=1)
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        callbacks=[mc],
+        max_epochs=1,
+        limit_train_batches=2,
+        limit_val_batches=2,
+        num_sanity_val_steps=0,
+        enable_progress_bar=False,
+        logger=False,
+    )
+
+    with pytest.raises(MisconfigurationException, match=r"could not find the monitored key"):
+        trainer.fit(model)
