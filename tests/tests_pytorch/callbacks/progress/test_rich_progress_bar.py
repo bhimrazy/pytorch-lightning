@@ -357,6 +357,47 @@ def test_rich_progress_bar_metrics_fast_dev_run(tmp_path):
 
 
 @RunIf(rich=True)
+def test_rich_progress_bar_v_num_integer_formatting(tmp_path):
+    """Test that `v_num` is displayed as an integer without decimal places in the Rich progress bar."""
+    from lightning.pytorch.loggers import CSVLogger
+    
+    progress_bar = RichProgressBar()
+    trainer = Trainer(
+        default_root_dir=tmp_path,
+        callbacks=progress_bar,
+        logger=CSVLogger(tmp_path),
+        limit_train_batches=1,
+        limit_val_batches=0,
+        max_epochs=1,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+    )
+    model = BoringModel()
+    trainer.fit(model)
+    
+    # Get the rendered metrics text
+    rendered = progress_bar.progress.columns[-1]._renderable_cache
+    train_progress_bar_id = progress_bar.train_progress_bar_id
+    text_obj = rendered[train_progress_bar_id][1]
+    rendered_text = str(text_obj)
+    
+    # Check that v_num appears in the rendered text
+    assert "v_num" in text_obj
+    
+    # Extract the v_num value from the rendered text
+    # The format should be "v_num: X" where X is an integer
+    v_num_start = rendered_text.find("v_num: ") + len("v_num: ")
+    v_num_end = rendered_text.find(" ", v_num_start)
+    if v_num_end == -1:  # If v_num is the last metric
+        v_num_end = len(rendered_text)
+    v_num_value = rendered_text[v_num_start:v_num_end]
+    
+    # Verify that v_num is displayed as an integer (no decimal places)
+    assert "." not in v_num_value, f"v_num should be displayed as integer, got: {v_num_value}"
+    assert v_num_value.isdigit(), f"v_num should be a digit, got: {v_num_value}"
+
+
+@RunIf(rich=True)
 def test_rich_progress_bar_correct_value_epoch_end(tmp_path):
     """Rich counterpart to test_tqdm_progress_bar::test_tqdm_progress_bar_correct_value_epoch_end."""
 

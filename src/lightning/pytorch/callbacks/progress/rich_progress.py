@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
+from numbers import Integral, Real
 from collections.abc import Generator
 from dataclasses import dataclass
 from datetime import timedelta
@@ -184,9 +185,13 @@ if _RICH_AVAILABLE:
 
         def _generate_metrics_texts(self) -> Generator[str, None, None]:
             for name, value in self._metrics.items():
-                if not isinstance(value, str):
-                    value = f"{value:{self._metrics_format}}"
-                yield f"{name}: {value}"
+                # Format only real, non-integer numbers with the metrics format (e.g., '.3f').
+                # Keep integers (like v_num) unformatted to avoid decimals such as '0.000'.
+                if isinstance(value, Real) and not isinstance(value, Integral):
+                    formatted_value = f"{value:{self._metrics_format}}"
+                else:
+                    formatted_value = value if isinstance(value, str) else str(value)
+                yield f"{name}: {formatted_value}"
 
 
 @dataclass
