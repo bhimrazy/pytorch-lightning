@@ -11,6 +11,9 @@ concurrency:
 jobs:
   required-jobs:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     if: github.event.pull_request.draft == false
     timeout-minutes: 71 # in case something is wrong with the internal timeout
     steps:
