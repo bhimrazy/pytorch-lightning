@@ -25,8 +25,8 @@ def RunIf(**kwargs):
 
 # RuntimeError: makeDeviceForHostname(): unsupported gloo device (fixed in 2.11)
 _xfail_gloo_windows = pytest.mark.xfail(
+    RuntimeError,
+    strict=True,
     condition=(_IS_WINDOWS and _TORCH_GREATER_EQUAL_2_8 and not _TORCH_GREATER_EQUAL_2_11),
     reason="makeDeviceForHostname(): unsupported gloo device",
-    raises=RuntimeError,
-    strict=True,
 )
